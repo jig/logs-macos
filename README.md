@@ -49,6 +49,15 @@ journalctl -f -o json 2>&1 | lm
 
 Non-JSON lines are passed through as plain text without crashing.
 
+### Custom title
+
+By default the status bar shows the auto-detected source command on the left.
+For long pipelines you can override it with `--title`:
+
+```bash
+./my-server --some --very --long --flags 2>&1 | lm --title "my-server"
+```
+
 ## Key bindings
 
 | Key | Action |

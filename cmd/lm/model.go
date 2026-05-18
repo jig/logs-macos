@@ -51,11 +51,16 @@ type model struct {
 	pipeCmd         string
 }
 
-func newModel(r *bufio.Reader) model {
+// newModel builds the model. title overrides the auto-detected source
+// command shown on the left of the status bar; empty means auto-detect.
+func newModel(r *bufio.Reader, title string) model {
 	vp := viewport.New(0, 0)
 	ti := textinput.New()
 	ti.Placeholder = "search…"
 	ti.CharLimit = 200
+	if title == "" {
+		title = detectPipeCommand()
+	}
 	return model{
 		reader:      r,
 		viewport:    vp,
@@ -63,7 +68,7 @@ func newModel(r *bufio.Reader) model {
 		atBottom:    true,
 		lineMode:    true,
 		now:         time.Now(),
-		pipeCmd:     detectPipeCommand(),
+		pipeCmd:     title,
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -42,8 +43,11 @@ func main() {
 }
 
 func run() error {
+	title := flag.String("title", "", "label shown on the left of the status bar (default: auto-detected source command)")
+	flag.Parse()
+
 	reader := bufio.NewReaderSize(os.Stdin, 64*1024)
-	m := newModel(reader)
+	m := newModel(reader, *title)
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
