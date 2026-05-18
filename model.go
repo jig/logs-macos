@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 type mode int
@@ -48,6 +48,7 @@ type model struct {
 	hOffset         int
 	maxContentWidth int
 	now             time.Time
+	pipeCmd         string
 }
 
 func newModel(r *bufio.Reader) model {
@@ -62,6 +63,7 @@ func newModel(r *bufio.Reader) model {
 		atBottom:    true,
 		lineMode:    true,
 		now:         time.Now(),
+		pipeCmd:     detectPipeCommand(),
 	}
 }
 
@@ -288,32 +290,32 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-const ansiBlackBg = "\033[48;2;0;0;0m"
+const (
+	ansiBlackBg = "\033[48;2;0;0;0m"
+	footBg      = "\033[48;2;150;180;200m" // greyish sky blue
+	footFg      = "\033[38;2;0;0;0m"       // black text
+	ansiReset   = "\033[0m"
+)
 
 func (m model) View() string {
-	raw := m.viewport.View() + "\n" + m.statusBar()
-	// Re-inject black background after every SGR reset so lipgloss token resets
-	// don't restore the transparent default background.
-	raw = strings.ReplaceAll(raw, "\033[m", "\033[m"+ansiBlackBg)
-	raw = strings.ReplaceAll(raw, "\033[0m", "\033[0m"+ansiBlackBg)
-	lines := strings.Split(raw, "\n")
+	// Black background only for the viewport area. Re-inject it after every SGR
+	// reset so lipgloss token resets don't restore the transparent default.
+	vp := m.viewport.View()
+	vp = strings.ReplaceAll(vp, "\033[m", "\033[m"+ansiBlackBg)
+	vp = strings.ReplaceAll(vp, "\033[0m", "\033[0m"+ansiBlackBg)
 	var sb strings.Builder
-	for i, line := range lines {
+	for _, line := range strings.Split(vp, "\n") {
 		sb.WriteString(ansiBlackBg)
 		sb.WriteString(line)
-		sb.WriteString(ansiBlackBg + "\033[K\033[0m")
-		if i < len(lines)-1 {
-			sb.WriteByte('\n')
-		}
+		sb.WriteString(ansiBlackBg + "\033[K" + ansiReset)
+		sb.WriteByte('\n')
 	}
+	sb.WriteString(m.statusBar())
 	return sb.String()
 }
 
-func (m model) statusBar() string {
-	dim := lipgloss.NewStyle().Faint(true)
-	if m.mode == modeSearch {
-		return "/" + m.searchInput.View()
-	}
+// statusText is the right-aligned part: mode, scroll state, match count.
+func (m model) statusText() string {
 	prefix := ""
 	if m.lineMode {
 		if m.hOffset > 0 {
@@ -326,13 +328,48 @@ func (m model) statusBar() string {
 	if m.searchQuery != "" {
 		suffix = fmt.Sprintf(" [%d/%d matches]", m.matchIndex+1, len(m.matchLines))
 	}
+	state := "streaming…"
 	if m.stdinDone {
-		return dim.Render(prefix + "(EOF)" + suffix)
+		state = "(EOF)"
+	} else if !m.atBottom {
+		state = "↑ scrolled — G to tail"
 	}
-	if !m.atBottom {
-		return dim.Render(prefix + "↑ scrolled — G to tail" + suffix)
+	return prefix + state + suffix
+}
+
+func (m model) statusBar() string {
+	w := m.width
+	if w <= 0 {
+		if m.mode == modeSearch {
+			return "/" + m.searchInput.View()
+		}
+		return ""
 	}
-	return dim.Render(prefix + "streaming…" + suffix)
+
+	if m.mode == modeSearch {
+		in := "/" + m.searchInput.View()
+		// keep the blue bar through the input's own SGR resets
+		in = strings.ReplaceAll(in, "\033[0m", "\033[0m"+footBg+footFg)
+		pad := w - visWidth(in)
+		if pad < 0 {
+			pad = 0
+		}
+		return footBg + footFg + in + strings.Repeat(" ", pad) + ansiReset
+	}
+
+	right := m.statusText()
+	rw := runewidth.StringWidth(right)
+	if rw >= w {
+		right = truncCmd(right, w)
+		return footBg + footFg + right + ansiReset
+	}
+
+	left := truncCmd(m.pipeCmd, w-rw-1)
+	gap := w - runewidth.StringWidth(left) - rw
+	if gap < 1 {
+		gap = 1
+	}
+	return footBg + footFg + left + strings.Repeat(" ", gap) + right + ansiReset
 }
 
 func (m *model) buildContent() string {
