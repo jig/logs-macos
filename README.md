@@ -18,16 +18,17 @@ Interactive TUI viewer for JSON log streams. Reads from stdin, syntax-highlights
 ## Install
 
 ```bash
-go install github.com/jig/logs-macos@latest
-mv $(go env GOPATH)/bin/logs-macos $(go env GOPATH)/bin/lm
+go install github.com/jig/logs-macos/cmd/lm@latest
 ```
+
+This installs a binary named `lm` into `$(go env GOPATH)/bin`.
 
 Or build locally:
 
 ```bash
 git clone https://github.com/jig/logs-macos
 cd logs-macos
-go build -o lm .
+go build -o lm ./cmd/lm
 ```
 
 ## Usage
