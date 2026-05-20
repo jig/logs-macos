@@ -20,16 +20,26 @@ const (
 	modeSearch
 )
 
+type viewMode int
+
+const (
+	viewCompressed viewMode = iota // key=value, time as first column, no braces (default)
+	viewLine                       // colorized JSON, single line
+	viewMulti                      // colorized JSON, pretty-printed
+)
+
 type renderedLine struct {
-	raw             string
-	rendered        string // multiline pretty-printed
-	renderedCompact string // single-line compact
-	compactWidth    int    // visible width of renderedCompact
-	logTime         time.Time
-	hasTime         bool
-	rawTimeVal      string // original value from JSON (unquoted str or raw number)
-	rawTimeIsStr    bool   // true = was JSON string, false = JSON number
-	isSeparator     bool
+	raw                string
+	rendered           string // multiline pretty-printed JSON
+	renderedCompact    string // single-line compact JSON
+	renderedCompressed string // key=value body (time stripped, no braces)
+	compactWidth       int    // visible width of renderedCompact
+	compressedWidth    int    // visible width of time col + space + body
+	logTime            time.Time
+	hasTime            bool
+	rawTimeVal         string // original value from JSON (unquoted str or raw number)
+	rawTimeIsStr       bool   // true = was JSON string, false = JSON number
+	isSeparator        bool
 }
 
 type model struct {
@@ -43,13 +53,15 @@ type model struct {
 	matchLines      []int
 	width           int
 	height          int
-	atBottom        bool
-	stdinDone       bool
-	lineMode        bool
-	hOffset         int
-	maxContentWidth int
-	now             time.Time
-	pipeCmd         string
+	atBottom           bool
+	stdinDone          bool
+	viewMode           viewMode
+	lastJSONView       viewMode // remembered so `j` returns to whichever JSON view was last used
+	hOffset            int
+	maxContentWidth    int // for viewLine
+	maxCompressedWidth int // for viewCompressed
+	now                time.Time
+	pipeCmd            string
 }
 
 // newModel builds the model. title overrides the auto-detected source
@@ -63,13 +75,14 @@ func newModel(r *bufio.Reader, title string) model {
 		title = detectPipeCommand()
 	}
 	return model{
-		reader:      r,
-		viewport:    vp,
-		searchInput: ti,
-		atBottom:    true,
-		lineMode:    true,
-		now:         time.Now(),
-		pipeCmd:     title,
+		reader:       r,
+		viewport:     vp,
+		searchInput:  ti,
+		atBottom:     true,
+		viewMode:     viewCompressed,
+		lastJSONView: viewLine,
+		now:          time.Now(),
+		pipeCmd:      title,
 	}
 }
 
@@ -94,20 +107,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case lineMsg:
 		compact := colorizeJSONCompact(msg.line)
+		compressed := colorizeCompressed(msg.line)
 		cw := visWidth(compact)
+		zw := timeColWidth + 1 + visWidth(compressed)
 		logTime, rawTimeVal, rawTimeIsStr, hasTime := parseLogTime(msg.line)
 		rl := renderedLine{
-			raw:             msg.line,
-			rendered:        colorizeJSON(msg.line),
-			renderedCompact: compact,
-			compactWidth:    cw,
-			logTime:         logTime,
-			hasTime:         hasTime,
-			rawTimeVal:      rawTimeVal,
-			rawTimeIsStr:    rawTimeIsStr,
+			raw:                msg.line,
+			rendered:           colorizeJSON(msg.line),
+			renderedCompact:    compact,
+			renderedCompressed: compressed,
+			compactWidth:       cw,
+			compressedWidth:    zw,
+			logTime:            logTime,
+			hasTime:            hasTime,
+			rawTimeVal:         rawTimeVal,
+			rawTimeIsStr:       rawTimeIsStr,
 		}
 		if cw > m.maxContentWidth {
 			m.maxContentWidth = cw
+		}
+		if zw > m.maxCompressedWidth {
+			m.maxCompressedWidth = zw
 		}
 		m.lines = append(m.lines, rl)
 		if m.searchQuery != "" {
@@ -155,14 +175,36 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case modeNormal:
 		switch msg.String() {
+		case "j":
+			// Toggle between compressed and the JSON view (returns to whichever
+			// JSON sub-view was last used).
+			if m.viewMode == viewCompressed {
+				m.viewMode = m.lastJSONView
+			} else {
+				m.lastJSONView = m.viewMode
+				m.viewMode = viewCompressed
+			}
+			m.hOffset = 0
+			m.viewport.SetContent(m.buildContent())
+			return m, nil
+
 		case "l":
-			m.lineMode = !m.lineMode
+			// Cycle JSON sub-views; from compressed jump straight to line.
+			switch m.viewMode {
+			case viewLine:
+				m.viewMode = viewMulti
+			case viewMulti:
+				m.viewMode = viewLine
+			case viewCompressed:
+				m.viewMode = viewLine
+			}
+			m.lastJSONView = m.viewMode
 			m.hOffset = 0
 			m.viewport.SetContent(m.buildContent())
 			return m, nil
 
 		case "left":
-			if m.lineMode && m.hOffset > 0 {
+			if m.viewMode != viewMulti && m.hOffset > 0 {
 				m.hOffset -= 8
 				if m.hOffset < 0 {
 					m.hOffset = 0
@@ -172,8 +214,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "right":
-			if m.lineMode {
-				maxOff := m.maxContentWidth - m.width
+			if m.viewMode != viewMulti {
+				maxOff := m.currentMaxWidth() - m.width
 				if maxOff > 0 && m.hOffset < maxOff {
 					m.hOffset += 8
 					if m.hOffset > maxOff {
@@ -185,7 +227,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "home":
-			if m.lineMode {
+			if m.viewMode != viewMulti {
 				m.hOffset = 0
 				m.viewport.SetContent(m.buildContent())
 				return m, nil
@@ -195,8 +237,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "end":
-			if m.lineMode {
-				maxOff := m.maxContentWidth - m.width
+			if m.viewMode != viewMulti {
+				maxOff := m.currentMaxWidth() - m.width
 				if maxOff > 0 {
 					m.hOffset = maxOff
 				}
@@ -326,15 +368,31 @@ func (m model) View() string {
 	return sb.String()
 }
 
+// currentMaxWidth returns the max content width relevant to the current view
+// (used by horizontal scroll bounds).
+func (m *model) currentMaxWidth() int {
+	if m.viewMode == viewCompressed {
+		return m.maxCompressedWidth
+	}
+	return m.maxContentWidth
+}
+
 // statusText is the right-aligned part: mode, scroll state, match count.
 func (m model) statusText() string {
+	var label string
+	switch m.viewMode {
+	case viewCompressed:
+		label = "compressed"
+	case viewLine:
+		label = "line"
+	case viewMulti:
+		label = "multi"
+	}
 	prefix := ""
-	if m.lineMode {
-		if m.hOffset > 0 {
-			prefix = fmt.Sprintf("[line +%d] ", m.hOffset)
-		} else {
-			prefix = "[line] "
-		}
+	if m.viewMode != viewMulti && m.hOffset > 0 {
+		prefix = fmt.Sprintf("[%s +%d] ", label, m.hOffset)
+	} else {
+		prefix = fmt.Sprintf("[%s] ", label)
 	}
 	suffix := ""
 	if m.searchQuery != "" {
@@ -385,10 +443,53 @@ func (m model) statusBar() string {
 }
 
 func (m *model) buildContent() string {
-	if m.lineMode {
+	switch m.viewMode {
+	case viewCompressed:
+		return m.buildContentCompressed()
+	case viewLine:
 		return m.buildContentLine()
+	default:
+		return m.buildContentMulti()
 	}
-	return m.buildContentMulti()
+}
+
+func (m *model) buildContentCompressed() string {
+	n := len(m.lines)
+	timePad := strings.Repeat(" ", timeColWidth)
+	var sb strings.Builder
+	for i, rl := range m.lines {
+		if rl.isSeparator {
+			sb.WriteString("\033[38;2;224;108;117m\033[48;2;0;0;0m\033[1m")
+			sb.WriteString(strings.Repeat("─", m.width))
+			sb.WriteString("\033[0m")
+			if i < n-1 {
+				sb.WriteByte('\n')
+			}
+			continue
+		}
+		// Time column (fixed width).
+		var tcol string
+		if rl.hasTime {
+			tcol = styleTime.Render(relTimeStrFixed(m.now.Sub(rl.logTime)))
+		} else {
+			tcol = timePad
+		}
+		line := tcol + " " + rl.renderedCompressed
+		if m.searchQuery != "" {
+			line = highlightSearch(line, rl.raw, m.searchQuery)
+		}
+		if rl.hasTime {
+			alpha := ageAlpha(rl.logTime, m.now)
+			line = fadeString(line, alpha)
+		}
+		line = hClip(line, m.hOffset, m.width)
+		sb.WriteString(line)
+		sb.WriteString("\033[0m")
+		if i < n-1 {
+			sb.WriteByte('\n')
+		}
+	}
+	return sb.String()
 }
 
 func (m *model) buildContentLine() string {
@@ -495,12 +596,17 @@ func (m *model) nextMatch(dir int) {
 
 func (m *model) scrollToMatch(sourceIdx int) {
 	var displayOffset int
-	if m.lineMode {
-		displayOffset = sourceIdx
-	} else {
+	if m.viewMode == viewMulti {
+		// Each log expands to multiple display lines.
 		for i := 0; i < sourceIdx && i < len(m.lines); i++ {
+			if m.lines[i].isSeparator {
+				displayOffset++
+				continue
+			}
 			displayOffset += strings.Count(m.lines[i].rendered, "\n") + 1
 		}
+	} else {
+		displayOffset = sourceIdx
 	}
 	target := displayOffset - m.viewport.Height/3
 	if target < 0 {

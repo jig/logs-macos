@@ -6,11 +6,11 @@ Interactive TUI viewer for JSON log streams. Reads from stdin, syntax-highlights
 
 ## Features
 
-- **JSON syntax highlighting** — keys, strings, numbers, booleans, nulls each in a distinct colour
-- **Relative timestamps** — `ts`, `time`, `timestamp`, `t`, `@timestamp` fields replaced with a live relative age (`5s`, `2m30s`, `1h15m`, …)
+- **Compressed mode** (default) — `key=value, key=value` with unquoted keys and no surrounding braces; the timestamp sits in a fixed-width time column on the left so values don't jitter as it grows
+- **JSON modes** — colorized single-line JSON or pretty-printed multi-line JSON (press `j` to toggle between compressed and JSON)
+- **Syntax highlighting** — keys, strings, numbers, booleans, nulls each in a distinct colour
+- **Relative timestamps** — `ts`, `time`, `timestamp`, `t`, `@timestamp` fields shown as a live relative age (` 5s `, ` 1m00`, `15h30`, ` 2d05`, …)
 - **Age-based fading** — recent logs (< 1 min) are brighter; older logs fade toward a muted sepia tone over 5 minutes
-- **Line mode** (default) — each JSON object on one compact line; wide lines scroll horizontally
-- **Multi-line mode** — pretty-printed indented JSON
 - **Live search** — `/`-style interactive search with highlighted matches and `n`/`N` navigation
 - **Separator** — press `-` to insert a visible horizontal rule between log bursts
 - **Opaque black background** — works correctly with transparent-background terminals (Ghostty, etc.)
@@ -62,9 +62,10 @@ For long pipelines you can override it with `--title`:
 
 | Key | Action |
 |-----|--------|
-| `l` | Toggle line mode / multi-line pretty-print |
-| `←` `→` | Scroll horizontally (line mode) |
-| `Home` `End` | Scroll to start / end of line (line mode), or top / bottom (multi-line) |
+| `j` | Toggle between compressed and JSON view |
+| `l` | Cycle JSON sub-views: single-line ↔ multi-line pretty-print |
+| `←` `→` | Scroll horizontally (compressed / JSON line) |
+| `Home` `End` | Scroll to start / end of line (compressed / JSON line), or top / bottom (multi-line) |
 | `/` | Enter search |
 | `n` `N` | Next / previous match |
 | `Esc` | Clear search |

@@ -99,6 +99,117 @@ func relTimeStr(age time.Duration) string {
 	}
 }
 
+// relTimeStrFixed formats a duration with a constant 5-char width so the
+// time column doesn't jitter as the value crosses unit boundaries:
+//
+//	" 0m05", " 1m05", "15m05", " 1h05", "23h45", " 1d12", "99d23"
+func relTimeStrFixed(age time.Duration) string {
+	if age < 0 {
+		age = 0
+	}
+	s := int(age.Seconds())
+	switch {
+	case s < 3600:
+		return fmt.Sprintf("%2dm%02d", s/60, s%60)
+	case s < 86400:
+		return fmt.Sprintf("%2dh%02d", s/3600, (s%3600)/60)
+	default:
+		return fmt.Sprintf("%2dd%02d", s/86400, (s%86400)/3600)
+	}
+}
+
+// timeColWidth is the fixed visible width of the time column rendered by
+// relTimeStrFixed (used to pad timeless lines).
+const timeColWidth = 5
+
+func isTimeKey(k string) bool {
+	switch k {
+	case "ts", "time", "timestamp", "t", "@timestamp":
+		return true
+	}
+	return false
+}
+
+// skipValue advances the decoder past one full JSON value (used to discard
+// the time field when rendering compressed output).
+func skipValue(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	d, ok := tok.(json.Delim)
+	if !ok || (d != '{' && d != '[') {
+		return nil
+	}
+	depth := 1
+	for depth > 0 {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if dd, ok := t.(json.Delim); ok {
+			switch dd {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+		}
+	}
+	return nil
+}
+
+// colorizeCompressed renders a top-level JSON object as `key=value, key=value`
+// with unquoted keys, no surrounding braces, and time-like fields stripped
+// (they appear in the time column instead). Falls back to the raw text when
+// the input isn't a JSON object.
+func colorizeCompressed(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.UseNumber()
+	tok, err := dec.Token()
+	if err != nil {
+		return raw
+	}
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return raw
+	}
+	var buf bytes.Buffer
+	first := true
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return raw
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return raw
+		}
+		if isTimeKey(key) {
+			if err := skipValue(dec); err != nil {
+				return raw
+			}
+			continue
+		}
+		if !first {
+			buf.WriteString(stylePunct.Render(", "))
+		}
+		first = false
+		buf.WriteString(styleKey.Render(key))
+		buf.WriteString(stylePunct.Render("="))
+		if err := tokenizeValueC(dec, &buf); err != nil {
+			return raw
+		}
+	}
+	if _, err := dec.Token(); err != nil {
+		return raw
+	}
+	return buf.String()
+}
+
 // replaceRenderedTime substitutes the cached rendered timestamp value in line
 // with the current relative age string. Works by matching the exact ANSI-colored
 // token that was written during initial JSON rendering.
