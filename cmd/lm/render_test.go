@@ -38,7 +38,7 @@ func TestRelTimeStrFixedWidth(t *testing.T) {
 func TestColorizeCompressedStripsTimeAndBraces(t *testing.T) {
 	raw := `{"ts":"2026-05-18T10:00:00Z","level":"info","msg":"hello world"}`
 	got := stripANSI(colorizeCompressed(raw))
-	want := `level="info", msg="hello world"`
+	want := `level="info" msg="hello world"`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -47,7 +47,18 @@ func TestColorizeCompressedStripsTimeAndBraces(t *testing.T) {
 func TestColorizeCompressedNoBraces(t *testing.T) {
 	raw := `{"a":1,"b":true,"c":null}`
 	got := stripANSI(colorizeCompressed(raw))
-	want := `a=1, b=true, c=null`
+	want := `a=1 b=true c=null`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Nested objects and arrays keep their braces and commas — the comma-less
+// flattening only applies to the outermost pairs.
+func TestColorizeCompressedKeepsNestedStructure(t *testing.T) {
+	raw := `{"level":"info","data":{"a":1,"b":2},"tags":["x","y"]}`
+	got := stripANSI(colorizeCompressed(raw))
+	want := `level="info" data={"a": 1, "b": 2} tags=["x", "y"]`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

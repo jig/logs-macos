@@ -195,7 +195,7 @@ func colorizeCompressed(raw string) string {
 			continue
 		}
 		if !first {
-			buf.WriteString(stylePunct.Render(", "))
+			buf.WriteByte(' ')
 		}
 		first = false
 		buf.WriteString(styleKey.Render(key))
