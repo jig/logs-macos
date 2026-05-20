@@ -38,7 +38,8 @@ func TestRelTimeStrFixedWidth(t *testing.T) {
 func TestColorizeCompressedStripsTimeAndBraces(t *testing.T) {
 	raw := `{"ts":"2026-05-18T10:00:00Z","level":"info","msg":"hello world"}`
 	got := stripANSI(colorizeCompressed(raw))
-	want := `level="info" msg="hello world"`
+	// "info" is letters-only → unquoted. "hello world" has a space → quoted.
+	want := `level=info msg="hello world"`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -54,11 +55,22 @@ func TestColorizeCompressedNoBraces(t *testing.T) {
 }
 
 // Nested objects and arrays keep their braces and commas — the comma-less
-// flattening only applies to the outermost pairs.
+// flattening only applies to the outermost pairs. Nested string values are
+// also kept quoted (the unquoting rule is top-level only).
 func TestColorizeCompressedKeepsNestedStructure(t *testing.T) {
 	raw := `{"level":"info","data":{"a":1,"b":2},"tags":["x","y"]}`
 	got := stripANSI(colorizeCompressed(raw))
-	want := `level="info" data={"a": 1, "b": 2} tags=["x", "y"]`
+	want := `level=info data={"a": 1, "b": 2} tags=["x", "y"]`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Anything with non-letters (digits, punctuation, spaces, unicode) keeps quotes.
+func TestColorizeCompressedQuotesNonLetterValues(t *testing.T) {
+	raw := `{"id":"abc-123","path":"/etc/passwd","name":"señor","empty":""}`
+	got := stripANSI(colorizeCompressed(raw))
+	want := `id="abc-123" path="/etc/passwd" name="señor" empty=""`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

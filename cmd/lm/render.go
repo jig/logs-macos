@@ -159,6 +159,55 @@ func skipValue(dec *json.Decoder) error {
 	return nil
 }
 
+// isSimpleLetterString reports whether s is non-empty and made only of ASCII
+// letters [a-zA-Z]. Such values can be rendered unquoted in compressed mode
+// — the green color already marks them as strings.
+func isSimpleLetterString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+			return false
+		}
+	}
+	return true
+}
+
+// renderCompressedValue reads one JSON value from dec and writes it to buf
+// using compressed-mode rules: simple letter-only string values drop their
+// surrounding quotes. Nested objects and arrays delegate to the regular
+// compact tokenizer so they keep braces, brackets, and commas.
+func renderCompressedValue(dec *json.Decoder, buf *bytes.Buffer) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	switch v := tok.(type) {
+	case string:
+		if isSimpleLetterString(v) {
+			buf.WriteString(styleStr.Render(v))
+		} else {
+			buf.WriteString(styleStr.Render(fmt.Sprintf("%q", v)))
+		}
+	case json.Number:
+		buf.WriteString(styleNum.Render(v.String()))
+	case bool:
+		buf.WriteString(styleBool.Render(fmt.Sprintf("%t", v)))
+	case nil:
+		buf.WriteString(styleNull.Render("null"))
+	case json.Delim:
+		switch v {
+		case '{':
+			return tokenizeObjectC(dec, buf)
+		case '[':
+			return tokenizeArrayC(dec, buf)
+		}
+	}
+	return nil
+}
+
 // colorizeCompressed renders a top-level JSON object as `key=value, key=value`
 // with unquoted keys, no surrounding braces, and time-like fields stripped
 // (they appear in the time column instead). Falls back to the raw text when
@@ -200,7 +249,7 @@ func colorizeCompressed(raw string) string {
 		first = false
 		buf.WriteString(styleKey.Render(key))
 		buf.WriteString(stylePunct.Render("="))
-		if err := tokenizeValueC(dec, &buf); err != nil {
+		if err := renderCompressedValue(dec, &buf); err != nil {
 			return raw
 		}
 	}
