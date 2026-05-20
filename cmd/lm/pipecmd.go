@@ -75,6 +75,45 @@ func sanitizeCmd(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// pipelineSiblingPIDs returns the PIDs of every other process sharing our
+// process group — i.e. the rest of the pipeline that fed us. Excludes our
+// own pid and any direct children (the `ps` we just spawned).
+func pipelineSiblingPIDs() []int {
+	me := os.Getpid()
+	pgid := syscall.Getpgrp()
+	out, err := exec.Command("ps", "-A", "-ww", "-o", "pgid=,pid=,ppid=").Output()
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 3 {
+			continue
+		}
+		pg, e1 := strconv.Atoi(fields[0])
+		pid, e2 := strconv.Atoi(fields[1])
+		ppid, e3 := strconv.Atoi(fields[2])
+		if e1 != nil || e2 != nil || e3 != nil {
+			continue
+		}
+		if pg != pgid || pid == me || ppid == me {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	return pids
+}
+
+// signalPipelineSiblings sends sig to every other process in our pipeline.
+// Used on Ctrl+C so the producing command (e.g. a server) terminates too.
+func signalPipelineSiblings(sig syscall.Signal) {
+	for _, pid := range pipelineSiblingPIDs() {
+		_ = syscall.Kill(pid, sig)
+	}
+}
+
 // truncCmd trims s to a maximum visible width, appending "…" when cut.
 func truncCmd(s string, max int) string {
 	if max <= 0 {

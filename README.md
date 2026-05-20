@@ -70,7 +70,8 @@ For long pipelines you can override it with `--title`:
 | `Esc` | Clear search |
 | `g` `G` | Scroll to top / bottom |
 | `-` | Insert a separator bar |
-| `q` `Ctrl+C` | Quit |
+| `q` | Quit `lm` (leaves the producing command running) |
+| `Ctrl+C` | Quit and forward `SIGINT` to the rest of the pipeline |
 
 ## Supported timestamp fields
 

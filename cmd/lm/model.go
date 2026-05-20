@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -243,7 +244,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "q", "ctrl+c":
+		case "q":
+			return m, tea.Quit
+
+		case "ctrl+c":
+			// Forward SIGINT to the rest of the pipeline so the producing
+			// command terminates with us instead of leaving the shell hanging.
+			signalPipelineSiblings(syscall.SIGINT)
 			return m, tea.Quit
 
 		default:
