@@ -18,6 +18,7 @@ type mode int
 const (
 	modeNormal mode = iota
 	modeSearch
+	modeHelp
 )
 
 type viewMode int
@@ -286,6 +287,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case "h", "?":
+			m.mode = modeHelp
+			return m, nil
+
 		case "q", "ctrl+c":
 			// Forward SIGINT to the rest of the pipeline so the producing
 			// command terminates with us instead of leaving the shell hanging.
@@ -336,6 +341,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		}
+
+	case modeHelp:
+		// Any key dismisses the help overlay.
+		m.mode = modeNormal
+		return m, nil
 	}
 
 	return m, nil
@@ -349,13 +359,18 @@ const (
 )
 
 func (m model) View() string {
-	// Black background only for the viewport area. Re-inject it after every SGR
-	// reset so lipgloss token resets don't restore the transparent default.
-	vp := m.viewport.View()
-	vp = strings.ReplaceAll(vp, "\033[m", "\033[m"+ansiBlackBg)
-	vp = strings.ReplaceAll(vp, "\033[0m", "\033[0m"+ansiBlackBg)
+	var body string
+	if m.mode == modeHelp {
+		body = helpView(m.width, m.viewport.Height)
+	} else {
+		body = m.viewport.View()
+	}
+	// Black background for the body. Re-inject it after every SGR reset so
+	// lipgloss token resets don't restore the transparent default.
+	body = strings.ReplaceAll(body, "\033[m", "\033[m"+ansiBlackBg)
+	body = strings.ReplaceAll(body, "\033[0m", "\033[0m"+ansiBlackBg)
 	var sb strings.Builder
-	for _, line := range strings.Split(vp, "\n") {
+	for _, line := range strings.Split(body, "\n") {
 		sb.WriteString(ansiBlackBg)
 		sb.WriteString(line)
 		sb.WriteString(ansiBlackBg + "\033[K" + ansiReset)

@@ -276,6 +276,57 @@ func replaceRenderedTime(line, rawTimeVal string, rawTimeIsStr bool, logTime, no
 	return strings.Replace(line, oldR, newR, 1)
 }
 
+// helpView builds the centered help overlay shown while in modeHelp.
+func helpView(width, height int) string {
+	rows := []struct{ k, d string }{
+		{"j", "Toggle compressed ↔ JSON view"},
+		{"l", "Cycle JSON views (single line ↔ pretty)"},
+		{"← →", "Horizontal scroll"},
+		{"Home End", "Jump to start/end of line (top/bottom in pretty)"},
+		{"g G", "Top / bottom"},
+		{"/", "Search (case-insensitive, live)"},
+		{"n N", "Next / previous match"},
+		{"Esc", "Cancel search"},
+		{"-", "Insert separator bar"},
+		{"h ?", "This help"},
+		{"q Ctrl+C", "Quit and forward SIGINT to the pipeline"},
+	}
+
+	keyW := 0
+	for _, r := range rows {
+		if w := runewidth.StringWidth(r.k); w > keyW {
+			keyW = w
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(helpTitleStyle.Render("lm — keyboard shortcuts"))
+	b.WriteString("\n\n")
+	for _, r := range rows {
+		pad := keyW - runewidth.StringWidth(r.k)
+		b.WriteString(helpKeyStyle.Render(r.k))
+		b.WriteString(strings.Repeat(" ", pad+4))
+		b.WriteString(helpDescStyle.Render(r.d))
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
+	b.WriteString(helpFooterStyle.Render("Press any key to dismiss"))
+
+	box := helpBoxStyle.Render(b.String())
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+var (
+	helpTitleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B")).Bold(true)
+	helpKeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#56B6C2")).Bold(true)
+	helpDescStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ABB2BF"))
+	helpFooterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5C6370")).Italic(true)
+	helpBoxStyle    = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#56B6C2")).
+			Padding(1, 3)
+)
+
 var (
 	styleKey   = lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
 	styleStr   = lipgloss.NewStyle().Foreground(lipgloss.Color("#98C379"))
