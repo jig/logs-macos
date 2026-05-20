@@ -286,10 +286,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "q":
-			return m, tea.Quit
-
-		case "ctrl+c":
+		case "q", "ctrl+c":
 			// Forward SIGINT to the rest of the pipeline so the producing
 			// command terminates with us instead of leaving the shell hanging.
 			signalPipelineSiblings(syscall.SIGINT)
