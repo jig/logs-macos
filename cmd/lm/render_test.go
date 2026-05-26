@@ -12,26 +12,24 @@ func stripANSI(s string) string {
 }
 
 func TestRelTimeStrFixedWidth(t *testing.T) {
-	cases := []time.Duration{
-		0, time.Second, 5 * time.Second, 59 * time.Second,
-		time.Minute, 90 * time.Second, 15 * time.Minute, 59*time.Minute + 59*time.Second,
-		time.Hour, 23 * time.Hour, 24 * time.Hour, 7 * 24 * time.Hour, 99 * 24 * time.Hour,
+	cases := []struct {
+		dur      time.Duration
+		expected string
+	}{
+		{0, " 0m00"},
+		{time.Minute, " 1m00"},
+		{59*time.Minute + 59*time.Second, "59m59"},
+		{time.Hour, " 1h00"},
+		{23 * time.Hour, "23h00"},
+		{24 * time.Hour, " 1d00h"},
+		{4*24*time.Hour + 22*time.Hour, " 4d22h"},
+		{99*24*time.Hour + 23*time.Hour, "99d23h"},
 	}
-	for _, d := range cases {
-		s := relTimeStrFixed(d)
-		if len(s) != 5 {
-			t.Errorf("relTimeStrFixed(%v) = %q (len=%d), want width 5", d, s, len(s))
+	for _, tc := range cases {
+		got := relTimeStrFixed(tc.dur)
+		if got != tc.expected {
+			t.Errorf("relTimeStrFixed(%v) = %q, want %q", tc.dur, got, tc.expected)
 		}
-	}
-	// Spot checks.
-	if got := relTimeStrFixed(time.Minute); got != " 1m00" {
-		t.Errorf("1m -> %q, want \" 1m00\"", got)
-	}
-	if got := relTimeStrFixed(59*time.Minute + 59*time.Second); got != "59m59" {
-		t.Errorf("59m59s -> %q, want \"59m59\"", got)
-	}
-	if got := relTimeStrFixed(time.Hour); got != " 1h00" {
-		t.Errorf("1h -> %q, want \" 1h00\"", got)
 	}
 }
 

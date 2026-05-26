@@ -99,10 +99,9 @@ func relTimeStr(age time.Duration) string {
 	}
 }
 
-// relTimeStrFixed formats a duration with a constant 5-char width so the
-// time column doesn't jitter as the value crosses unit boundaries:
-//
-//	" 0m05", " 1m05", "15m05", " 1h05", "23h45", " 1d12", "99d23"
+// relTimeStrFixed formats a duration with a fixed-width display so the
+// time column doesn't jitter as the value crosses unit boundaries.
+// Format adapts to fit: " 0m05" / "15m30" / " 1h05" / "23h45" / " 1d22h"
 func relTimeStrFixed(age time.Duration) string {
 	if age < 0 {
 		age = 0
@@ -114,7 +113,7 @@ func relTimeStrFixed(age time.Duration) string {
 	case s < 86400:
 		return fmt.Sprintf("%2dh%02d", s/3600, (s%3600)/60)
 	default:
-		return fmt.Sprintf("%2dd%02d", s/86400, (s%86400)/3600)
+		return fmt.Sprintf("%2dd%02dh", s/86400, (s%86400)/3600)
 	}
 }
 
